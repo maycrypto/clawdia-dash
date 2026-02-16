@@ -302,11 +302,14 @@ function TasksTab() {
   const [filter, setFilter] = useState("all");
   const [saving, setSaving] = useState(false);
 
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+
   if (loading && !data) return <LoadingState text="Loading tasks" />;
   if (error) return <ErrorState message={error} onRetry={refetch} />;
 
   const tasks = data?.tasks || [];
-  const filtered = filter === "all" ? tasks : tasks.filter(t => t.status === filter);
+  let filtered = filter === "all" ? tasks : tasks.filter(t => t.status === filter);
+  if (assigneeFilter !== "all") filtered = filtered.filter(t => (t.assignee || "agent") === assigneeFilter);
 
   const grouped = {};
   filtered.forEach(task => {
@@ -349,9 +352,12 @@ function TasksTab() {
     done: tasks.filter(t => t.status === "done").length,
   };
 
+  const agentCount = tasks.filter(t => (t.assignee || "agent") === "agent").length;
+  const meCount = tasks.filter(t => t.assignee === "me").length;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {[
           { key: "all", label: "Все" },
           { key: "open", label: "Открытые" },
@@ -366,6 +372,22 @@ function TasksTab() {
             fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, cursor: "pointer", transition: "all 0.2s",
           }}>
             {f.label} ({statusCounts[f.key]})
+          </button>
+        ))}
+        <span style={{ width: 1, height: 20, background: "rgba(255,255,255,0.06)", margin: "0 4px" }} />
+        {[
+          { key: "all", label: "Все" },
+          { key: "agent", label: "Агент" },
+          { key: "me", label: "Мои" },
+        ].map(f => (
+          <button key={`a_${f.key}`} onClick={() => setAssigneeFilter(f.key)} style={{
+            padding: "6px 14px", borderRadius: 5,
+            border: `1px solid ${assigneeFilter === f.key ? "rgba(0,170,255,0.3)" : "rgba(255,255,255,0.06)"}`,
+            background: assigneeFilter === f.key ? "rgba(0,170,255,0.08)" : "rgba(255,255,255,0.02)",
+            color: assigneeFilter === f.key ? "#0af" : "#666",
+            fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, cursor: "pointer", transition: "all 0.2s",
+          }}>
+            {f.label} ({f.key === "all" ? tasks.length : f.key === "agent" ? agentCount : meCount})
           </button>
         ))}
       </div>
@@ -397,11 +419,26 @@ function TasksTab() {
                   {task.status === "done" ? "✓" : task.status === "in_progress" ? "—" : ""}
                 </div>
                 <PriorityDot priority={task.priority} />
+                {task.assignee && (
+                  <span style={{
+                    fontSize: 9, padding: "1px 6px", borderRadius: 3, flexShrink: 0,
+                    background: task.assignee === "me" ? "rgba(255,159,28,0.1)" : "rgba(0,170,255,0.1)",
+                    color: task.assignee === "me" ? "#ff9f1c" : "#0af",
+                    fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, letterSpacing: "0.05em",
+                  }}>{task.assignee === "me" ? "ME" : "BOT"}</span>
+                )}
                 <span style={{
                   fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, flex: 1,
                   color: task.status === "done" ? "#444" : "#ccc",
                   textDecoration: task.status === "done" ? "line-through" : "none",
-                }}>{task.title}</span>
+                }}>
+                  {task.title}
+                  {task.deadline && task.status !== "done" && (
+                    <span style={{ fontSize: 11, color: "#666", marginLeft: 8 }}>
+                      {new Date(task.deadline).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  )}
+                </span>
                 {task.category && (
                   <span style={{
                     fontSize: 10, padding: "2px 8px", borderRadius: 3,
