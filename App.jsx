@@ -110,10 +110,92 @@ function StatusBadge({ status }) {
   );
 }
 
-// ===== PRIORITY DOT =====
-function PriorityDot({ priority }) {
+// ===== CATEGORY COLORS =====
+const CATEGORIES = {
+  work: { label: "работа", color: "#0af" },
+  home: { label: "дом", color: "#ff9f1c" },
+  health: { label: "здоровье", color: "#0f3" },
+  fitness: { label: "спорт", color: "#0ff" },
+  finance: { label: "финансы", color: "#f0f" },
+  system: { label: "system", color: "#666" },
+  other: { label: "другое", color: "#555" },
+};
+
+function CategoryBadge({ category }) {
+  const cat = CATEGORIES[category] || CATEGORIES.other;
+  return (
+    <span style={{
+      fontSize: 10, padding: "2px 8px", borderRadius: 3,
+      background: `${cat.color}15`, color: cat.color,
+      fontFamily: "'IBM Plex Mono', monospace", fontWeight: 500,
+      border: `1px solid ${cat.color}22`,
+    }}>{cat.label}</span>
+  );
+}
+
+// ===== PRIORITY SELECTOR =====
+function PriorityDot({ priority, taskId, onUpdate }) {
+  const [open, setOpen] = useState(false);
   const colors = { high: "#ff3366", medium: "#ff9f1c", low: "#555" };
-  return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: colors[priority] || colors.low, boxShadow: priority === "high" ? "0 0 6px rgba(255,51,102,0.5)" : "none", flexShrink: 0 }} />;
+  const labels = { high: "Высокий", medium: "Обычный", low: "Низкий" };
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          display: "inline-block", width: 10, height: 10, borderRadius: "50%",
+          background: colors[priority] || colors.medium,
+          boxShadow: priority === "high" ? "0 0 6px rgba(255,51,102,0.5)" : "none",
+          cursor: "pointer", transition: "transform 0.15s",
+          transform: open ? "scale(1.3)" : "scale(1)",
+        }}
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: 20, left: -4, zIndex: 100,
+          background: "#151a20", border: "1px solid rgba(0,255,50,0.15)",
+          borderRadius: 6, padding: 4, minWidth: 120,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
+        }}>
+          {Object.entries(labels).map(([key, label]) => (
+            <div
+              key={key}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (taskId && onUpdate && key !== priority) onUpdate(taskId, { priority: key });
+                setOpen(false);
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+                borderRadius: 4, cursor: "pointer", transition: "background 0.15s",
+                background: key === priority ? "rgba(0,255,50,0.05)" : "transparent",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,255,50,0.08)"}
+              onMouseLeave={e => e.currentTarget.style.background = key === priority ? "rgba(0,255,50,0.05)" : "transparent"}
+            >
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%", background: colors[key],
+                boxShadow: key === "high" ? "0 0 4px rgba(255,51,102,0.4)" : "none",
+              }} />
+              <span style={{
+                fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
+                color: key === priority ? "#ccc" : "#666",
+              }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ===== CARD =====
@@ -345,6 +427,22 @@ function TasksTab() {
     }
   };
 
+  const updateTask = async (taskId, updates) => {
+    setSaving(true);
+    try {
+      await fetch(`${API_BASE}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      await refetch();
+    } catch (err) {
+      console.error("Failed to update task:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const statusCounts = {
     all: tasks.length,
     open: tasks.filter(t => t.status === "open").length,
@@ -418,7 +516,7 @@ function TasksTab() {
                 }}>
                   {task.status === "done" ? "✓" : task.status === "in_progress" ? "—" : ""}
                 </div>
-                <PriorityDot priority={task.priority} />
+                <PriorityDot priority={task.priority} taskId={task.id} onUpdate={updateTask} />
                 {task.assignee && (
                   <span style={{
                     fontSize: 9, padding: "1px 6px", borderRadius: 3, flexShrink: 0,
@@ -439,13 +537,7 @@ function TasksTab() {
                     </span>
                   )}
                 </span>
-                {task.category && (
-                  <span style={{
-                    fontSize: 10, padding: "2px 8px", borderRadius: 3,
-                    background: "rgba(255,255,255,0.04)", color: "#555",
-                    fontFamily: "'IBM Plex Mono', monospace",
-                  }}>{task.category}</span>
-                )}
+                {task.category && <CategoryBadge category={task.category} />}
                 <StatusBadge status={task.status} />
               </div>
             ))}
@@ -853,6 +945,100 @@ function SkillsTab() {
   );
 }
 
+// ===== GUIDE TAB =====
+function GuideTab() {
+  const sections = [
+    {
+      icon: "☰",
+      title: "Tasks — разовые задачи",
+      color: "#0f3",
+      content: [
+        { subtitle: "Что это", text: "Задачи, которые нужно сделать один раз. Выполнил — закрыл. Это могут быть задачи для агента или твои личные." },
+        { subtitle: "Как поставить задачу агенту", text: "Просто напиши в чат: «создай задачу: пофиксить баг в парсере». Агент сама определит категорию и добавит задачу в Tasks." },
+        { subtitle: "Как добавить личную задачу", text: "Напиши: «добавь задачу для меня: сходить к стоматологу завтра в 18:00». Агент создаст задачу с пометкой ME и дедлайном." },
+        { subtitle: "Категории", text: "Агент автоматически выбирает категорию: работа (синий), дом (оранжевый), здоровье (зелёный), спорт (голубой), финансы (розовый), system (серый), другое. Тебе не нужно указывать — агент сама разберётся." },
+        { subtitle: "Приоритет", text: "По умолчанию все задачи создаются с обычным приоритетом. Чтобы изменить — кликни на цветную точку слева от задачи и выбери: высокий (красный), обычный (оранжевый) или низкий (серый)." },
+        { subtitle: "Статусы", text: "open — новая, in_progress — в работе (видно в Current Activity), done — выполнена. Переключай кликом на чекбокс." },
+        { subtitle: "Исполнитель", text: "BOT — задача для агента, ME — твоя личная. Фильтруй кнопками Агент / Мои." },
+      ],
+    },
+    {
+      icon: "⟳",
+      title: "Processes — повторяемые процессы",
+      color: "#0af",
+      content: [
+        { subtitle: "Что это", text: "Автоматические задачи, которые запускаются регулярно по расписанию. Работают постоянно, пока не отключишь." },
+        { subtitle: "Примеры", text: "Парсер квартир каждый день в 10:00 и 20:00. Ревью памяти раз в неделю. Проверка обновлений. Мониторинг новостей." },
+        { subtitle: "Как создать", text: "Скажи агенту: «настрой крон-задачу: мониторить Avito каждые 6 часов». Агент создаст процесс и он появится в Processes." },
+        { subtitle: "Статусы", text: "running — активен, работает по расписанию. idle — отключён." },
+        { subtitle: "Важно", text: "Сюда попадают ТОЛЬКО повторяемые задачи с расписанием. Разовые задачи (даже с дедлайном) — это Tasks." },
+      ],
+    },
+    {
+      icon: "⚡",
+      title: "Skills — модули агента",
+      color: "#ff9f1c",
+      content: [
+        { subtitle: "Что это", text: "Навыки и инструменты агента. Системные — встроенные в OpenClaw. Кастомные — созданные тобой." },
+        { subtitle: "Системные", text: "Discord, Telegram, Apple Notes, 1Password, браузер и десятки других." },
+        { subtitle: "Кастомные", text: "Твои скиллы: парсеры, мониторинги, интеграции." },
+        { subtitle: "Подробности", text: "Кликни на карточку скилла — откроется полный SKILL.md с документацией." },
+      ],
+    },
+    {
+      icon: "◈",
+      title: "Overview — главная",
+      color: "#0f3",
+      content: [
+        { subtitle: "Agent Status", text: "Агент онлайн, аптайм, версия OpenClaw, объём памяти." },
+        { subtitle: "Current Activity", text: "Задача, над которой агент работает прямо сейчас." },
+        { subtitle: "Today's Tasks", text: "Задачи на сегодня с прогрессом." },
+        { subtitle: "Active Processes", text: "Запущенные процессы с временем следующего запуска." },
+      ],
+    },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <Card>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 16, color: "#0f3", fontWeight: 600, marginBottom: 8 }}>
+          Как пользоваться дашбордом
+        </div>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#888", lineHeight: 1.6 }}>
+          Clawdia Dashboard показывает что делает твой AI-агент в реальном времени. Данные обновляются каждые 30 секунд. Ниже — гайд по каждой вкладке.
+        </div>
+      </Card>
+
+      {sections.map((section, i) => (
+        <Card key={i} style={{ borderLeft: `2px solid ${section.color}33` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <span style={{ fontSize: 20 }}>{section.icon}</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 16, color: section.color, fontWeight: 600 }}>{section.title}</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {section.content.map((item, j) => (
+              <div key={j}>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#aaa", fontWeight: 600, marginBottom: 4 }}>
+                  {item.subtitle}
+                </div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+                  {item.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+
+      <Card style={{ borderLeft: "2px solid rgba(0,255,50,0.2)" }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#888", lineHeight: 1.6 }}>
+          <span style={{ color: "#0f3", fontWeight: 600 }}>Совет:</span> все команды агенту можно давать на естественном языке. Просто опиши что нужно — агент разберётся.
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ===== MAIN =====
 export default function App() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -878,6 +1064,7 @@ export default function App() {
     tasks: { label: "Tasks", icon: "☰", count: taskCount || undefined, component: <TasksTab /> },
     processes: { label: "Processes", icon: "⟳", count: processCount || undefined, component: <ProcessesTab /> },
     skills: { label: "Skills", icon: "⚡", count: skillCount || undefined, component: <SkillsTab /> },
+    guide: { label: "Guide", icon: "?", component: <GuideTab /> },
   };
 
   return (
@@ -928,8 +1115,11 @@ export default function App() {
           {tabs[activeTab].component}
         </div>
 
-        <div style={{ textAlign: "center", marginTop: 40, padding: "16px 0", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#333", borderTop: "1px solid rgba(0,255,50,0.05)" }}>
-          OpenClaw.ai — {statusData?.name || "Clawdia"} v{statusData?.version || "?"} — {connectionOk ? "connected" : "disconnected"}
+        <div style={{ textAlign: "center", marginTop: 40, padding: "16px 0", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#333", borderTop: "1px solid rgba(0,255,50,0.05)", display: "flex", justifyContent: "center", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <span>OpenClaw.ai — {statusData?.name || "Clawdia"} v{statusData?.version || "?"} — {connectionOk ? "connected" : "disconnected"}</span>
+          <a href="https://t.me/maycrypto" target="_blank" rel="noopener noreferrer" style={{ color: "#444", textDecoration: "none", transition: "color 0.2s", display: "flex", alignItems: "center", gap: 4 }} onMouseEnter={e => e.currentTarget.style.color = "#0af"} onMouseLeave={e => e.currentTarget.style.color = "#444"}>
+            <span style={{ fontSize: 13 }}>✈</span> @maycrypto
+          </a>
         </div>
       </div>
     </div>
