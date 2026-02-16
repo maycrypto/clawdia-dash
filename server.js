@@ -12,12 +12,18 @@ const OPENCLAW_ROOT = '__OPENCLAW_ROOT__';
 const PORT = 3100;
 const START_TIME = Date.now();
 
+// Skill paths
+const SYSTEM_SKILLS_DIR = '/usr/lib/node_modules/openclaw/skills';
+const CUSTOM_SKILLS_DIR = path.join(OPENCLAW_ROOT, 'skills');
+// Cron cache (agent writes this periodically)
+const CRON_CACHE_PATH = path.join(__dirname, 'cron-cache.json');
+
 function readFile(f) { try { return fs.readFileSync(path.join(OPENCLAW_ROOT, f), 'utf-8'); } catch { return ''; } }
 function fileExists(f) { try { return fs.existsSync(path.join(OPENCLAW_ROOT, f)); } catch { return false; } }
 
 function getDirSize(d) {
   try {
-    const fp = path.join(OPENCLAW_ROOT, d);
+    const fp = path.isAbsolute(d) ? d : path.join(OPENCLAW_ROOT, d);
     if (!fs.existsSync(fp)) return 0;
     return parseInt(execSync(`du -sb "${fp}" 2>/dev/null | cut -f1`).toString().trim()) || 0;
   } catch { return 0; }
@@ -51,27 +57,65 @@ function parseTasks() {
   return tasks;
 }
 
-function parseSkills() {
-  const skills = [], dir = path.join(OPENCLAW_ROOT, 'skills');
-  if (!fs.existsSync(dir)) return skills;
-  let i = 0;
-  for (const d of fs.readdirSync(dir, {withFileTypes:true}).filter(x=>x.isDirectory())) {
-    i++;
-    const sp = path.join(dir, d.name, 'SKILL.md');
-    let desc='', type='system';
-    if (fs.existsSync(sp)) {
-      const c = fs.readFileSync(sp, 'utf-8');
-      const lines = c.split('\n').filter(l=>l.trim()&&!l.startsWith('#')&&!l.startsWith('---'));
-      desc = lines[0] || '';
-      if (c.includes('type: custom')) type = 'custom';
+function readSkillsFromDir(dirPath, type) {
+  const skills = [];
+  if (!fs.existsSync(dirPath)) return skills;
+  let dirs;
+  try { dirs = fs.readdirSync(dirPath, { withFileTypes: true }).filter(d => d.isDirectory()); } catch { return skills; }
+
+  for (const d of dirs) {
+    const skillMdPath = path.join(dirPath, d.name, 'SKILL.md');
+    let description = '';
+
+    if (fs.existsSync(skillMdPath)) {
+      const content = fs.readFileSync(skillMdPath, 'utf-8');
+      // Extract description from YAML frontmatter
+      const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+      if (fmMatch) {
+        const descMatch = fmMatch[1].match(/description:\s*["']?(.+?)["']?\s*$/m);
+        if (descMatch) description = descMatch[1];
+      }
+      // Fallback: first non-empty, non-header line
+      if (!description) {
+        const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('#') && !l.startsWith('---'));
+        description = lines[0] || '';
+      }
     }
-    const stat = fs.statSync(path.join(dir, d.name));
-    skills.push({ id:`skill_${String(i).padStart(3,'0')}`, name:d.name, type, active:true, description:desc, addedDate:stat.birthtime.toISOString().split('T')[0], usageCount:null });
+
+    let addedDate = null;
+    try { addedDate = fs.statSync(path.join(dirPath, d.name)).birthtime.toISOString().split('T')[0]; } catch {}
+
+    skills.push({ id: `skill_${type}_${d.name}`, name: d.name, type, active: true, description, addedDate, usageCount: null });
   }
   return skills;
 }
 
+function parseAllSkills() {
+  const system = readSkillsFromDir(SYSTEM_SKILLS_DIR, 'system');
+  const custom = readSkillsFromDir(CUSTOM_SKILLS_DIR, 'custom');
+  return [...custom, ...system].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function parseProcesses() {
+  // Read from cron-cache.json (agent updates this)
+  if (fs.existsSync(CRON_CACHE_PATH)) {
+    try {
+      const raw = fs.readFileSync(CRON_CACHE_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      const list = Array.isArray(data) ? data : (data.processes || []);
+      return list.map((p, i) => ({
+        id: p.id || `proc_${i+1}`,
+        name: p.name || `process-${i+1}`,
+        type: p.type || 'cron',
+        schedule: p.schedule || '—',
+        status: p.status === false || p.status === 'disabled' || p.status === 'idle' ? 'idle' : 'running',
+        lastRun: p.lastRun || null,
+        nextRun: p.nextRun || null,
+        description: p.description || p.name || '',
+      }));
+    } catch (err) { console.error('cron-cache error:', err.message); }
+  }
+  // Fallback: parse AGENTS.md
   const content = readFile('AGENTS.md'), procs = [];
   let i = 0;
   for (const line of content.split('\n')) {
@@ -85,7 +129,7 @@ function parseProcesses() {
 
 app.get('/api/status', (req, res) => {
   const tasks = parseTasks();
-  const cur = tasks.find(t=>t.status==='in_progress');
+  const cur = tasks.find(t => t.status === 'in_progress');
   let ver = '1.0.0'; const vm = readFile('AGENTS.md').match(/version[:\s]+([\d.]+)/i); if(vm) ver=vm[1];
   res.json({ name:'Clawdia', version:ver, uptime:formatUptime(Date.now()-START_TIME), currentTask:cur?cur.title:null, memorySize:formatBytes(getDirSize('memory')), totalTasks:tasks.length, completedTasks:tasks.filter(t=>t.status==='done').length });
 });
@@ -126,14 +170,16 @@ app.post('/api/tasks', (req, res) => {
 });
 
 app.get('/api/processes', (req, res) => { res.json({ processes: parseProcesses() }); });
-app.get('/api/skills', (req, res) => { res.json({ skills: parseSkills() }); });
+app.get('/api/skills', (req, res) => { res.json({ skills: parseAllSkills() }); });
 
 app.get('/api/skills/:name/content', (req, res) => {
-  const sp = path.join(OPENCLAW_ROOT, 'skills', req.params.name, 'SKILL.md');
-  if (!fs.existsSync(sp)) return res.status(404).json({ error: 'Skill not found' });
-  res.json({ name: req.params.name, content: fs.readFileSync(sp, 'utf-8') });
+  for (const dir of [CUSTOM_SKILLS_DIR, SYSTEM_SKILLS_DIR]) {
+    const sp = path.join(dir, req.params.name, 'SKILL.md');
+    if (fs.existsSync(sp)) return res.json({ name: req.params.name, content: fs.readFileSync(sp, 'utf-8') });
+  }
+  res.status(404).json({ error: 'Skill not found' });
 });
 
-app.get('/api/health', (req, res) => { res.json({ ok:true }); });
+app.get('/api/health', (req, res) => { res.json({ ok: true }); });
 
 app.listen(PORT, '127.0.0.1', () => console.log(`Clawdia API on http://127.0.0.1:${PORT}`));
