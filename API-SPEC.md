@@ -1,10 +1,31 @@
-# Clawdia Dashboard — API Specification
+# Clawdia Dashboard — API Specification v2.1
 
 ## Задача
 
 Подними API-сервер для дашборда Clawdia. Дашборд уже установлен и ждёт API на порту 3100. Тебе нужно создать сервер, который отдаёт данные о задачах, скиллах, процессах и статусе агента.
 
 **Важно:** ты лучше знаешь свою файловую систему — найди где хранятся данные и парси их. Ниже описан формат ответов, который ожидает дашборд.
+
+---
+
+## Концепция
+
+### Tasks — разовые задачи
+Задачи, которые нужно сделать один раз. Могут быть задачи агента ИЛИ личные задачи пользователя. После выполнения закрываются.
+
+Примеры:
+- "пофиксить баг дублирования сообщений" (agent)
+- "сходить к стоматологу в 18:00" (me)
+- "написать пост в канал" (me)
+- "создать OSINT realty skill" (agent)
+
+### Processes — повторяемые по расписанию
+Автоматические процессы, которые запускаются регулярно по расписанию. Работают постоянно, пока не отключены.
+
+Примеры:
+- "CIAN мониторинг каждый день в 10:00 и 20:00" (крон)
+- "тренировка через день в 11:00" (расписание)
+- "еженедельный ревью памяти" (крон)
 
 ---
 
@@ -45,7 +66,7 @@
 
 ### GET /api/tasks
 
-Список задач. Поддерживает фильтры: `?status=done`, `?date=2026-02-17`
+Список разовых задач. Поддерживает фильтры: `?status=done`, `?date=2026-02-17`, `?assignee=agent`
 
 ```json
 {
@@ -55,19 +76,37 @@
       "title": "название задачи",
       "status": "open | in_progress | done",
       "date": "2026-02-17",
+      "deadline": "2026-02-17T18:00:00+03:00",
       "priority": "high | medium | low",
-      "category": "system | apartment | fitness | ..."
+      "category": "system | apartment | fitness | personal | ...",
+      "assignee": "agent | me"
     }
   ]
 }
 ```
 
+Поля:
+- `id` — уникальный идентификатор
+- `title` — название задачи
+- `status` — `open` (новая), `in_progress` (в работе), `done` (завершена)
+- `date` — дата задачи (YYYY-MM-DD)
+- `deadline` — дата и время дедлайна (ISO 8601) или null если без дедлайна
+- `priority` — `high`, `medium`, `low`
+- `category` — произвольный тег (system, apartment, fitness, personal, content, ...)
+- `assignee` — кто выполняет: `agent` (агент) или `me` (пользователь)
+
 ### PATCH /api/tasks/:id
 
-Обновить статус задачи. Тело запроса:
+Обновить задачу. Тело запроса (любые поля):
 
 ```json
 { "status": "done" }
+```
+
+Или:
+
+```json
+{ "status": "in_progress", "priority": "high" }
 ```
 
 Ответ: `{ "success": true, "id": "task_001" }`
@@ -78,34 +117,44 @@
 
 ```json
 {
-  "title": "новая задача",
-  "priority": "medium",
-  "category": "general",
-  "date": "2026-02-17"
+  "title": "сходить к стоматологу",
+  "priority": "high",
+  "category": "personal",
+  "date": "2026-02-18",
+  "deadline": "2026-02-18T18:00:00+03:00",
+  "assignee": "me"
 }
 ```
 
+Все поля кроме `title` опциональны. Дефолты:
+- `priority`: "medium"
+- `category`: "general"
+- `date`: сегодня
+- `deadline`: null
+- `assignee`: "agent"
+
 ### GET /api/processes
 
-Крон-задачи и фоновые процессы.
+Повторяемые процессы с расписанием. Крон-задачи и регулярные активности.
 
 ```json
 {
   "processes": [
     {
       "id": "уникальный id",
-      "name": "CIAN Monitor",
+      "name": "CIAN Monitor (Codex)",
       "type": "cron",
       "schedule": "0 10,20 * * * МСК",
       "status": "running | idle",
       "lastRun": "2026-02-17T10:00:00Z",
       "nextRun": "2026-02-17T20:00:00Z",
-      "description": "Описание задачи"
+      "description": "Сканирование квартир на CIAN через Codex"
     }
   ]
 }
 ```
 
+- `type`: `cron` (автоматический крон) или `schedule` (регулярная активность)
 - `status`: `running` = активный, `idle` = отключён
 - `lastRun`/`nextRun`: ISO 8601 или null
 
