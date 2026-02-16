@@ -91,8 +91,8 @@
 - `status` — `open` (новая), `in_progress` (в работе), `done` (завершена)
 - `date` — дата задачи (YYYY-MM-DD)
 - `deadline` — дата и время дедлайна (ISO 8601) или null если без дедлайна
-- `priority` — `high`, `medium`, `low`
-- `category` — произвольный тег (system, apartment, fitness, personal, content, ...)
+- `priority` — `high`, `medium`, `low`. По умолчанию `medium`. Пользователь может изменить приоритет в дашборде кликом
+- `category` — агент определяет автоматически из контекста задачи. Стандартные категории: `work` (работа), `home` (дом), `health` (здоровье), `fitness` (спорт), `finance` (финансы), `system` (системные задачи агента), `other` (всё остальное)
 - `assignee` — кто выполняет: `agent` (агент) или `me` (пользователь)
 
 ### PATCH /api/tasks/:id
@@ -127,8 +127,8 @@
 ```
 
 Все поля кроме `title` опциональны. Дефолты:
-- `priority`: "medium"
-- `category`: "general"
+- `priority`: "medium" (пользователь может изменить в дашборде)
+- `category`: агент определяет автоматически. Допустимые значения: `work`, `home`, `health`, `fitness`, `finance`, `system`, `other`
 - `date`: сегодня
 - `deadline`: null
 - `assignee`: "agent"
