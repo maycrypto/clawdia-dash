@@ -95,31 +95,25 @@
 - `category` — агент определяет автоматически из контекста задачи. Стандартные категории: `work` (работа), `home` (дом), `health` (здоровье), `fitness` (спорт), `finance` (финансы), `system` (системные задачи агента), `other` (всё остальное)
 - `assignee` — кто выполняет: `agent` (агент) или `me` (пользователь)
 
-### PATCH /api/tasks/:id
+### PATCH /api/tasks/:id (только для агента)
 
-Обновить задачу. Тело запроса (любые поля):
+Обновить задачу. Используется агентом с localhost, не из дашборда.
 
 ```json
 { "status": "done" }
 ```
 
-Или:
-
-```json
-{ "status": "in_progress", "priority": "high" }
-```
-
 Ответ: `{ "success": true, "id": "task_001" }`
 
-### POST /api/tasks
+### POST /api/tasks (только для агента)
 
-Создать задачу. Тело:
+Создать задачу. Используется агентом с localhost, не из дашборда.
 
 ```json
 {
   "title": "сходить к стоматологу",
-  "priority": "high",
-  "category": "personal",
+  "priority": "medium",
+  "category": "health",
   "date": "2026-02-18",
   "deadline": "2026-02-18T18:00:00+03:00",
   "assignee": "me"
@@ -195,15 +189,107 @@
 
 Ищи файл в обоих директориях (system и custom).
 
+### GET /api/files
+
+Список файлов агента для просмотра в дашборде. Агент сам определяет какие файлы показывать.
+
+```json
+{
+  "files": [
+    {
+      "name": "AGENTS.md",
+      "path": "AGENTS.md",
+      "category": "core",
+      "size": "18.2 KB",
+      "modified": "2026-02-17T10:00:00Z"
+    }
+  ]
+}
+```
+
+Поля:
+- `name` — имя файла для отображения
+- `path` — относительный путь от корня workspace (используется для запроса содержимого)
+- `category` — группировка: `core` (ядро агента), `notes` (заметки), `learnings` (обучение), `memory` (память), `other` (прочее)
+- `size` — человекочитаемый размер
+- `modified` — дата последнего изменения (ISO 8601)
+
+Какие файлы показывать:
+- **core:** AGENTS.md, MEMORY.md, SOUL.md, TOOLS.md, USER.md, IDENTITY.md, HEARTBEAT.md, SESSION-STATE.md и подобные .md в корне
+- **notes:** всё из notes/ (tasks.md, training-log.md и т.д.)
+- **learnings:** всё из .learnings/ (ERRORS.md, LEARNINGS.md и т.д.)
+- **memory:** всё из memory/ (ежедневные заметки)
+- **НЕ показывать:** .credentials/, .venv, node_modules, tmp-файлы, бинарные файлы, скрипты .py, кэш .json
+
+### GET /api/files/content?path=AGENTS.md
+
+Содержимое конкретного файла.
+
+```json
+{
+  "name": "AGENTS.md",
+  "path": "AGENTS.md",
+  "content": "# Agent Configuration\n\n..."
+}
+```
+
+- `path` — тот же путь что в списке файлов
+- **Безопасность:** не отдавай файлы из .credentials/ и не выходи за пределы workspace (проверяй path traversal `../`)
+
 ### GET /api/health
 
 ```json
 { "ok": true }
 ```
 
----
+## Безопасность
 
-## Запуск
+**КРИТИЧНО:** Дашборд и API доступны на порту 80 без авторизации. Без защиты кто угодно может увидеть твои задачи и инжектить фейковые данные через POST-запросы (prompt injection).
+
+### Обязательно: Basic Auth на nginx
+
+Закрой весь дашборд паролем. Только ты сможешь его открыть.
+
+```bash
+# Создай файл паролей (замени USERNAME и PASSWORD)
+sudo apt-get install -y apache2-utils
+sudo htpasswd -cb /etc/nginx/.htpasswd USERNAME PASSWORD
+```
+
+Добавь в nginx-конфиг (`/etc/nginx/sites-available/clawdia`) внутри блока `server`:
+
+```nginx
+auth_basic "Clawdia Dashboard";
+auth_basic_user_file /etc/nginx/.htpasswd;
+```
+
+Полный конфиг:
+```nginx
+server {
+    listen 80;
+    server_name YOUR_IP;
+
+    auth_basic "Clawdia Dashboard";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    root ~/clawdia-dashboard/dist;
+    index index.html;
+
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ {
+        proxy_pass http://127.0.0.1:3100/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+После: `sudo nginx -t && sudo systemctl reload nginx`
+
+Теперь при открытии дашборда браузер попросит логин/пароль. API тоже защищён — без авторизации POST-запросы не пройдут.
+
+---
 
 ```bash
 cd ~/clawdia-api
