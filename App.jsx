@@ -133,68 +133,16 @@ function CategoryBadge({ category }) {
   );
 }
 
-// ===== PRIORITY SELECTOR =====
-function PriorityDot({ priority, taskId, onUpdate }) {
-  const [open, setOpen] = useState(false);
+// ===== PRIORITY DOT (read-only) =====
+function PriorityDot({ priority }) {
   const colors = { high: "#ff3366", medium: "#ff9f1c", low: "#555" };
-  const labels = { high: "Высокий", medium: "Обычный", low: "Низкий" };
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
   return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <span
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        style={{
-          display: "inline-block", width: 10, height: 10, borderRadius: "50%",
-          background: colors[priority] || colors.medium,
-          boxShadow: priority === "high" ? "0 0 6px rgba(255,51,102,0.5)" : "none",
-          cursor: "pointer", transition: "transform 0.15s",
-          transform: open ? "scale(1.3)" : "scale(1)",
-        }}
-      />
-      {open && (
-        <div style={{
-          position: "absolute", top: 20, left: -4, zIndex: 100,
-          background: "#151a20", border: "1px solid rgba(0,255,50,0.15)",
-          borderRadius: 6, padding: 4, minWidth: 120,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
-        }}>
-          {Object.entries(labels).map(([key, label]) => (
-            <div
-              key={key}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (taskId && onUpdate && key !== priority) onUpdate(taskId, { priority: key });
-                setOpen(false);
-              }}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
-                borderRadius: 4, cursor: "pointer", transition: "background 0.15s",
-                background: key === priority ? "rgba(0,255,50,0.05)" : "transparent",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(0,255,50,0.08)"}
-              onMouseLeave={e => e.currentTarget.style.background = key === priority ? "rgba(0,255,50,0.05)" : "transparent"}
-            >
-              <span style={{
-                width: 8, height: 8, borderRadius: "50%", background: colors[key],
-                boxShadow: key === "high" ? "0 0 4px rgba(255,51,102,0.4)" : "none",
-              }} />
-              <span style={{
-                fontFamily: "'IBM Plex Mono', monospace", fontSize: 11,
-                color: key === priority ? "#ccc" : "#666",
-              }}>{label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <span style={{
+      display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+      background: colors[priority] || colors.medium,
+      boxShadow: priority === "high" ? "0 0 6px rgba(255,51,102,0.5)" : "none",
+      flexShrink: 0,
+    }} />
   );
 }
 
@@ -382,8 +330,6 @@ function OverviewTab() {
 function TasksTab() {
   const { data, loading, error, refetch } = useApi("/tasks");
   const [filter, setFilter] = useState("all");
-  const [saving, setSaving] = useState(false);
-
   const [assigneeFilter, setAssigneeFilter] = useState("all");
 
   if (loading && !data) return <LoadingState text="Loading tasks" />;
@@ -408,39 +354,6 @@ function TasksTab() {
     if (dateStr === today) return `Сегодня — ${new Date(dateStr).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`;
     if (dateStr === tomorrow) return `Завтра — ${new Date(dateStr).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}`;
     return new Date(dateStr).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
-  };
-
-  const toggleStatus = async (task) => {
-    const nextStatus = task.status === "done" ? "open" : task.status === "open" ? "in_progress" : "done";
-    setSaving(true);
-    try {
-      await fetch(`${API_BASE}/tasks/${task.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      await refetch();
-    } catch (err) {
-      console.error("Failed to update task:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateTask = async (taskId, updates) => {
-    setSaving(true);
-    try {
-      await fetch(`${API_BASE}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      await refetch();
-    } catch (err) {
-      console.error("Failed to update task:", err);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const statusCounts = {
@@ -502,21 +415,17 @@ function TasksTab() {
                 display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
                 background: "rgba(255,255,255,0.015)", borderRadius: 6,
                 borderLeft: `2px solid ${task.status === "done" ? "#0f3" : task.status === "in_progress" ? "#0af" : "#333"}`,
-                transition: "background 0.2s", cursor: "pointer", opacity: saving ? 0.6 : 1,
-              }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(0,255,50,0.03)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.015)"}
-              >
-                <div onClick={() => toggleStatus(task)} style={{
+              }}>
+                <div style={{
                   width: 18, height: 18, borderRadius: 4,
                   border: task.status === "done" ? "1px solid #0f3" : "1px solid #333",
                   background: task.status === "done" ? "rgba(0,255,50,0.15)" : "transparent",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 12, color: "#0f3", flexShrink: 0, cursor: "pointer",
+                  fontSize: 12, color: "#0f3", flexShrink: 0,
                 }}>
                   {task.status === "done" ? "✓" : task.status === "in_progress" ? "—" : ""}
                 </div>
-                <PriorityDot priority={task.priority} taskId={task.id} onUpdate={updateTask} />
+                <PriorityDot priority={task.priority} />
                 {task.assignee && (
                   <span style={{
                     fontSize: 9, padding: "1px 6px", borderRadius: 3, flexShrink: 0,
@@ -945,6 +854,187 @@ function SkillsTab() {
   );
 }
 
+// ===== FILES TAB =====
+function FilesTab() {
+  const { data, loading, error, refetch } = useApi("/files");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [fileContent, setFileContent] = useState(null);
+  const [loadingContent, setLoadingContent] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const openFile = async (file) => {
+    setSelectedFile(file);
+    setLoadingContent(true);
+    setFileContent(null);
+    try {
+      const res = await fetch(`${API_BASE}/files/content?path=${encodeURIComponent(file.path)}`);
+      const data = await res.json();
+      setFileContent(data.content || "Файл пуст");
+    } catch {
+      setFileContent("Ошибка загрузки файла");
+    } finally {
+      setLoadingContent(false);
+    }
+  };
+
+  if (loading && !data) return <LoadingState text="Loading files" />;
+  if (error) return <ErrorState message={error} onRetry={refetch} />;
+
+  const files = data?.files || [];
+  const filtered = categoryFilter === "all" ? files : files.filter(f => f.category === categoryFilter);
+
+  const categoryColors = {
+    core: "#0f3",
+    notes: "#0af",
+    learnings: "#ff9f1c",
+    memory: "#f0f",
+    other: "#555",
+  };
+  const categoryLabels = {
+    core: "Ядро",
+    notes: "Заметки",
+    learnings: "Обучение",
+    memory: "Память",
+    other: "Прочее",
+  };
+
+  const categoryCounts = {};
+  files.forEach(f => { categoryCounts[f.category] = (categoryCounts[f.category] || 0) + 1; });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setCategoryFilter("all")} style={{
+          padding: "6px 14px", borderRadius: 5,
+          border: `1px solid ${categoryFilter === "all" ? "rgba(0,255,50,0.3)" : "rgba(255,255,255,0.06)"}`,
+          background: categoryFilter === "all" ? "rgba(0,255,50,0.08)" : "rgba(255,255,255,0.02)",
+          color: categoryFilter === "all" ? "#0f3" : "#666",
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, cursor: "pointer",
+        }}>
+          Все ({files.length})
+        </button>
+        {Object.entries(categoryLabels).map(([key, label]) => {
+          const count = categoryCounts[key] || 0;
+          if (count === 0) return null;
+          return (
+            <button key={key} onClick={() => setCategoryFilter(key)} style={{
+              padding: "6px 14px", borderRadius: 5,
+              border: `1px solid ${categoryFilter === key ? `${categoryColors[key]}44` : "rgba(255,255,255,0.06)"}`,
+              background: categoryFilter === key ? `${categoryColors[key]}15` : "rgba(255,255,255,0.02)",
+              color: categoryFilter === key ? categoryColors[key] : "#666",
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, cursor: "pointer",
+            }}>
+              {label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {filtered.map(file => (
+          <div
+            key={file.path}
+            onClick={() => openFile(file)}
+            style={{
+              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+              background: "rgba(255,255,255,0.015)", borderRadius: 6,
+              borderLeft: `2px solid ${categoryColors[file.category] || "#333"}`,
+              cursor: "pointer", transition: "background 0.2s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "rgba(0,255,50,0.03)"}
+            onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.015)"}
+          >
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, color: "#0f3" }}>📄</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#ccc", flex: 1 }}>
+              {file.name}
+            </span>
+            <span style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 3,
+              background: `${categoryColors[file.category] || "#555"}15`,
+              color: categoryColors[file.category] || "#555",
+              fontFamily: "'IBM Plex Mono', monospace",
+              border: `1px solid ${categoryColors[file.category] || "#555"}22`,
+            }}>{categoryLabels[file.category] || file.category}</span>
+            {file.size && (
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#444" }}>
+                {file.size}
+              </span>
+            )}
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "#333" }}>
+              click to open →
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {filtered.length === 0 && (
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#444", textAlign: "center", padding: 30 }}>Нет файлов</div>
+      )}
+
+      {selectedFile && (
+        <FileModal file={selectedFile} content={fileContent} loading={loadingContent} onClose={() => { setSelectedFile(null); setFileContent(null); }} />
+      )}
+    </div>
+  );
+}
+
+function FileModal({ file, content, loading, onClose }) {
+  useEffect(() => {
+    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+        background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)",
+        zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 20, animation: "fadeIn 0.2s ease",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "#0d1117", border: "1px solid rgba(0,255,50,0.15)", borderRadius: 10,
+          width: "100%", maxWidth: 800, maxHeight: "85vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
+        }}
+      >
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "16px 20px", borderBottom: "1px solid rgba(0,255,50,0.08)",
+        }}>
+          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, color: "#0f3", fontWeight: 600 }}>
+            📄 {file.name}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {file.size && <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#555" }}>{file.size}</span>}
+            <span onClick={onClose} style={{
+              fontFamily: "'IBM Plex Mono', monospace", fontSize: 18, color: "#555", cursor: "pointer",
+              width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 4,
+            }}>✕</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+          {loading ? <LoadingState text="Loading file" /> : (
+            <MarkdownView text={content || ""} />
+          )}
+        </div>
+        <div style={{
+          padding: "10px 20px", borderTop: "1px solid rgba(0,255,50,0.05)",
+          fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "#333",
+        }}>
+          {file.path}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ===== GUIDE TAB =====
 function GuideTab() {
   const sections = [
@@ -957,8 +1047,8 @@ function GuideTab() {
         { subtitle: "Как поставить задачу агенту", text: "Просто напиши в чат: «создай задачу: пофиксить баг в парсере». Агент сама определит категорию и добавит задачу в Tasks." },
         { subtitle: "Как добавить личную задачу", text: "Напиши: «добавь задачу для меня: сходить к стоматологу завтра в 18:00». Агент создаст задачу с пометкой ME и дедлайном." },
         { subtitle: "Категории", text: "Агент автоматически выбирает категорию: работа (синий), дом (оранжевый), здоровье (зелёный), спорт (голубой), финансы (розовый), system (серый), другое. Тебе не нужно указывать — агент сама разберётся." },
-        { subtitle: "Приоритет", text: "По умолчанию все задачи создаются с обычным приоритетом. Чтобы изменить — кликни на цветную точку слева от задачи и выбери: высокий (красный), обычный (оранжевый) или низкий (серый)." },
-        { subtitle: "Статусы", text: "open — новая, in_progress — в работе (видно в Current Activity), done — выполнена. Переключай кликом на чекбокс." },
+        { subtitle: "Приоритет", text: "Цветная точка слева от задачи: красный — высокий, оранжевый — обычный, серый — низкий. Чтобы изменить приоритет — скажи агенту в чате." },
+        { subtitle: "Статусы", text: "open — новая, in_progress — в работе (видно в Current Activity), done — выполнена. Управление статусами — через чат с агентом." },
         { subtitle: "Исполнитель", text: "BOT — задача для агента, ME — твоя личная. Фильтруй кнопками Агент / Мои." },
       ],
     },
@@ -1032,7 +1122,7 @@ function GuideTab() {
 
       <Card style={{ borderLeft: "2px solid rgba(0,255,50,0.2)" }}>
         <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: "#888", lineHeight: 1.6 }}>
-          <span style={{ color: "#0f3", fontWeight: 600 }}>Совет:</span> все команды агенту можно давать на естественном языке. Просто опиши что нужно — агент разберётся.
+          <span style={{ color: "#0f3", fontWeight: 600 }}>Дашборд — read-only.</span> Здесь ты наблюдаешь за агентом. Чтобы создать задачу, изменить приоритет или управлять процессами — пиши агенту в чат. Все команды на естественном языке.
         </div>
       </Card>
     </div>
@@ -1055,15 +1145,19 @@ export default function App() {
   const { data: skillsData } = useApi("/skills");
   const { data: processesData } = useApi("/processes");
 
+  const { data: filesData } = useApi("/files");
+
   const taskCount = (tasksData?.tasks || []).filter(t => t.status !== "done").length;
   const processCount = (processesData?.processes || []).filter(p => p.status === "running").length;
   const skillCount = (skillsData?.skills || []).filter(s => s.active).length;
+  const fileCount = (filesData?.files || []).length;
 
   const tabs = {
     overview: { label: "Overview", icon: "◈", component: <OverviewTab /> },
     tasks: { label: "Tasks", icon: "☰", count: taskCount || undefined, component: <TasksTab /> },
     processes: { label: "Processes", icon: "⟳", count: processCount || undefined, component: <ProcessesTab /> },
     skills: { label: "Skills", icon: "⚡", count: skillCount || undefined, component: <SkillsTab /> },
+    files: { label: "Files", icon: "📄", count: fileCount || undefined, component: <FilesTab /> },
     guide: { label: "Guide", icon: "?", component: <GuideTab /> },
   };
 
